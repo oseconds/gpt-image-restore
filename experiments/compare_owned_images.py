@@ -72,10 +72,14 @@ def collect_images(inputs: list[Path]) -> list[Path]:
 
 
 def _slug(path: Path) -> str:
-    name = re.sub(r"[^a-z0-9_-]+", "-", path.stem.lower()).strip("-")[:48] or "image"
-    # Two different source folders can contain the same basename.
-    digest = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:8]
-    return f"test-{name}-{digest}"
+    # Match upstream's tidy sample IDs: teapot/, portrait/, poster/.
+    # The filename determines the stable public-facing directory name.
+    name = re.sub(r"[^a-z0-9-]+", "-", path.stem.lower()).strip("-")[:48]
+    if name:
+        return name
+    # For non-Latin filenames, avoid collapsing every item into 'image'.
+    digest = hashlib.sha256(path.stem.encode("utf-8")).hexdigest()[:8]
+    return f"image-{digest}"
 
 
 def _change(a: np.ndarray, b: np.ndarray) -> dict:
@@ -188,6 +192,9 @@ def main() -> None:
     if args.publish and not args.credit:
         parser.error("--publish requires --credit for source attribution")
     manifest_path = PUBLIC_MANIFEST if args.publish else PRIVATE_MANIFEST
+    stems = [_slug(path) for path in images]
+    if len(stems) != len(set(stems)):
+        parser.error("Two images resolve to the same sample ID; rename their files uniquely")
     if (args.name or args.roi is not None) and len(images) != 1:
         parser.error("--name and --roi require one input image")
     if not 0 <= args.delta_gain <= 2:
