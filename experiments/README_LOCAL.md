@@ -124,3 +124,33 @@ Inspect visual quality: pixel difference is not a quality metric.
 
 All assets stay in gitignored `docs/local_media/`. Upstream sample media
 are not licensed for redistribution: do not publish their derivatives.
+
+## Lanczos / Spline36 0.5x and 2x roundtrip experiment
+
+Compare changes from **resampling itself**, separate from scaled restoration.
+Test the Lanczos half-resolution / Spline36 back-to-native suggestion, as
+well as Spline36 2x / Lanczos back-to-native. Both can be prepended to
+the original Balanced preset without modifying the restoration pipeline.
+
+```sh
+python experiments/compare_resampler_paths.py --sample portrait
+open docs/local_media/resampler-portrait/comparison.png
+python experiments/compare_resampler_paths.py --sample teapot
+open docs/local_media/resampler-teapot/comparison.png
+```
+
+The half-size roundtrip defaults to a 0.25 blend with the original BEFORE
+Balanced. Try `--half-blend 1` to see the full, much stronger low-pass result.
+The 2x roundtrip is compared as a control. To additionally run the **full
+Balanced algorithm at 2x resolution** (significantly slower, more memory):
+
+```sh
+python experiments/compare_resampler_paths.py --sample portrait --balanced-at-2x
+```
+
+Outputs: full-size PNG variants, a native-coordinate `comparison.png`, and
+`report.json`. The 2x test reports both its direct downscaled restoration
+and the **control-subtracted 2x filter delta**, isolating changes from
+restoration instead of from resampling itself. This is a hypothesis test;
+loss of fine hair/skin texture is a likely side effect of 0.5x roundtrip.
+All generated demo derivatives stay local in the ignored directory.
