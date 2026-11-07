@@ -26,6 +26,7 @@ import sys
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
+from shutil import copyfile
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -59,19 +60,19 @@ def _image(image: np.ndarray) -> Image.Image:
 def _comparison(variants: dict[str, np.ndarray], baseline: np.ndarray,
                 region: tuple[int, int, int, int], outfile: Path) -> None:
     items = list(variants.items())
-    if len(items) != 8:
-        raise AssertionError("Expected eight experiment variants")
+    if len(items) != 9:
+        raise AssertionError("Expected nine experiment variants")
     _, _, w, h = region
     label_h = 27
     # Top 2 rows: native pixel crops. Bottom 2 rows: abs difference from Balanced x12.
-    sheet = Image.new("RGB", (w*4, (h+label_h)*4), "white")
+    sheet = Image.new("RGB", (w*3, (h+label_h)*6), "white")
     draw = ImageDraw.Draw(sheet)
     b = _crop(baseline, region)
     for idx, (name, full) in enumerate(items):
         cropped = _crop(full, region)
         for is_difference in (False, True):
-            row = (idx // 4) + (2 if is_difference else 0)
-            col = idx % 4
+            row = (idx // 3) + (3 if is_difference else 0)
+            col = idx % 3
             x, y = col*w, row*(h+label_h)
             title = name if not is_difference else f"{name} - Balanced (abs x12)"
             draw.text((x+5, y+5), title, fill="black")
@@ -192,7 +193,7 @@ def _run(args: argparse.Namespace) -> None:
     (target / "report.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     # Keep all historical runs while allowing a stable command to open the newest.
-    _image(np.asarray(Image.open(target / "comparison.png").convert("RGB"))).save(parent / "latest.png")
+    copyfile(target / "comparison.png", parent / "latest.png")
     (parent / "latest-report.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
