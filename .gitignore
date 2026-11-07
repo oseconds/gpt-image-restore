@@ -14,3 +14,10 @@ site/
 gptimg_restore/gui/web/backend-web.js
 gptimg_restore/gui/web/pyodide-worker.js
 gptimg_restore/gui/web/worker-runtime.py
+
+# Local-only multiscale experiment outputs (never commit sample derivatives)
+docs/showcase.local.json
+docs/local_media/
+docs/media/*/multiscale.webp
+experiments/media_reports/
+multiscale_results/

@@ -161,6 +161,9 @@ h2 {
   margin-bottom: 12px;
 }
 .versions, .tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.compare-label { display: inline-flex; align-items: center; gap: 6px; font-size: 0.875rem; }
+.compare-select { min-height: 36px; border: 1px solid var(--line-strong); border-radius: var(--radius); padding: 0 8px; background: var(--bg); color: var(--text); font: inherit; }
+.compare-select option { background: var(--bg); color: var(--text); }
 
 .view, .tool {
   min-height: 36px;

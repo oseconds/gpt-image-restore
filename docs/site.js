@@ -9,15 +9,16 @@
 /* =================================== 전역 상수/변수 =================================== */
 
 
-const MANIFEST_URL = "showcase.json";
+const MANIFEST_URL = new URLSearchParams(location.search).has("local") ? "showcase.local.json" : "showcase.json";
 const KEY_STEP = 2;
 const KEY_STEP_LARGE = 10;
 const STAGE_MAX_VIEWPORT = 0.78;
 const STAGE_MIN_HEIGHT = 160;
 const TOUCH_SLOP = 6;
 
-const VERSIONS = ["original", "balanced", "strong"];
-const DEFAULT_RIGHT = "strong";
+const VERSIONS = ["original", "balanced", "strong", "multiscale"];
+const DEFAULT_LEFT = "balanced";
+const DEFAULT_RIGHT = "multiscale";
 
 const MAX_SCALE = 16;
 const DEVICE_STEPS = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32, 40, 48, 64];
@@ -311,32 +312,40 @@ function createItem(item, template) {
     const after = stage.querySelector("img.after");
     const boostBefore = stage.querySelector("canvas.before");
     const boostAfter = stage.querySelector("canvas.after");
+    const tagBefore = stage.querySelector(".tag-before");
     const tagAfter = stage.querySelector(".tag-after");
     const divider = stage.querySelector(".divider");
     const boost = section.querySelector(".boost");
-    const state = { right: null, pos: 50, boost: false };
+    const state = { left: null, right: null, pos: 50, boost: false };
     const view = { base: 0, steps: [], scale: 0, x: 0, y: 0, width: 0, height: 0, wheelAt: -Infinity, wheelRest: 0, touched: false };
     const slider = { pointer: null, dragging: false, startX: 0, startY: 0 };
     const gesture = { pointers: new Map(), pinch: null, settleTimer: 0 };
-    const pixels = { wanted: DEFAULT_RIGHT, original: null, curve: null, painted: null, token: 0 };
+    const pixels = { wantedLeft: DEFAULT_LEFT, wantedRight: DEFAULT_RIGHT, original: null, curve: null, paintedLeft: null, paintedRight: null, token: 0 };
 
     section.id = item.id;
     const link = section.querySelector(".item-link");
     link.href = "#" + item.id;
-    before.src = item.images.original;
+    before.src = item.images[DEFAULT_LEFT];
     for (const image of [before, after]) {
         image.width = item.width;
         image.height = item.height;
     }
     I18n.translate(section);
 
-    const versionButtons = VERSIONS.map((key) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "view";
-        button.addEventListener("click", () => selectRight(key));
-        section.querySelector(".versions").append(button);
-        return button;
+    const availableVersions = VERSIONS.filter((key) => item.images[key]);
+    const selectors = ["left", "right"].map((side, index) => {
+        const wrapper = document.createElement("label");
+        wrapper.className = "compare-label";
+        const name = document.createElement("span");
+        name.textContent = index === 0 ? "A" : "B";
+        const select = document.createElement("select");
+        select.className = "compare-select";
+        select.setAttribute("aria-label", name.textContent);
+        for (const key of availableVersions) select.add(new Option(_versionLabel(key), key));
+        select.addEventListener("change", () => selectSide(side, select.value));
+        wrapper.append(name, select);
+        section.querySelector(".versions").append(wrapper);
+        return { side, select };
     });
 
     /** @description 화면 맞춤보다 확대된 상태 여부 */
@@ -433,37 +442,40 @@ function createItem(item, template) {
         }
     }
 
-    /** @description 오른쪽 결과에 딸린 대체 텍스트, 이름표, 경계 설명을 현재 언어로 갱신 */
-    function labelRight() {
-        const label = _versionLabel(state.right);
-        after.alt = I18n.t("image.alt", { title: _itemTitle(item), version: label });
-        tagAfter.textContent = label;
-        divider.setAttribute("aria-label", I18n.t("divider.label", { version: label }));
+    /** @description 두 이미지의 대체 텍스트, 이름표, 슬라이더 접근성 문구 갱신 */
+    function labelSides() {
+        const leftVersion = _versionLabel(state.left);
+        const rightVersion = _versionLabel(state.right);
+        const title = _itemTitle(item);
+        before.alt = I18n.t("image.alt", { title, version: leftVersion });
+        after.alt = I18n.t("image.alt", { title, version: rightVersion });
+        tagBefore.textContent = leftVersion;
+        tagAfter.textContent = rightVersion;
+        divider.setAttribute("aria-label", I18n.t("divider.label", { leftVersion, rightVersion }));
         setPos(state.pos);
     }
 
-    /** @description 항목 문구 전체를 현재 언어로 갱신, 보기 상태는 유지 */
+    /** @description 언어 변경 시 메뉴와 이미지 설명 갱신 */
     function relabel() {
-        const title = _itemTitle(item);
-        link.textContent = title;
-        before.alt = I18n.t("image.alt", { title, version: _versionLabel("original") });
-        versionButtons.forEach((button, i) => { button.textContent = _versionLabel(VERSIONS[i]); });
-        if (state.right) labelRight();
+        link.textContent = _itemTitle(item);
+        for (const { select } of selectors) {
+            for (const option of select.options) option.textContent = _versionLabel(option.value);
+        }
+        if (state.left && state.right) labelSides();
     }
 
-    /** @description 오른쪽 면 결과를 버튼, 이미지, 이름표에 한꺼번에 반영 */
-    function commitRight(key) {
-        state.right = key;
-        versionButtons.forEach((button, i) => button.setAttribute("aria-pressed", String(VERSIONS[i] === key)));
-        after.src = item.images[key];
-        labelRight();
+    /** @description 선택이 완료된 면을 표시한다. */
+    function commitSide(side, key) {
+        state[side] = key;
+        const target = side === "left" ? before : after;
+        target.src = item.images[key];
+        const selector = selectors.find((entry) => entry.side === side).select;
+        selector.value = key;
+        if (state.left && state.right) labelSides();
     }
 
-    /**
-     * @description 대비 강조 없이 오른쪽 결과 표시, 새 이미지 디코딩이 끝난 뒤 반영해 이전 이미지가 새 이름표 아래 보이지 않게 함
-     * @param {string} key 표시할 결과 키
-     */
-    async function showPlain(key) {
+    /** @description 이미지 로딩이 끝난 경우에만 화면 전환 */
+    async function showPlain(side, key) {
         const token = ++pixels.token;
         const image = new Image();
         image.src = item.images[key];
@@ -473,28 +485,33 @@ function createItem(item, template) {
             console.error(e.name + "\n" + e.message + "\n" + e.stack);
             return;
         }
-        if (token === pixels.token) commitRight(key);
+        if (token === pixels.token) commitSide(side, key);
     }
 
-    /** @description 오른쪽 면에 표시할 결과 선택 */
-    function selectRight(key) {
-        pixels.wanted = key;
+    function selectSide(side, key) {
+        if (!item.images[key]) return;
+        if (side === "left") pixels.wantedLeft = key;
+        else pixels.wantedRight = key;
         if (state.boost) refreshBoost();
-        else showPlain(key);
+        else showPlain(side, key);
     }
 
     /**
-     * @description 대비 강조 이미지 준비, 원본 전체에서 항목마다 한 번 구한 곡선을 모든 결과에 같게 적용해 이미지마다 한 번만 그림
-     * 오른쪽 캔버스와 선택 결과는 같은 시점에 반영해 이전 결과가 새 이름표 아래 보이지 않게 함
+     * @description Original에서 결정한 공통 대비 강조 곡선을 양쪽 이미지에 동일 적용
      */
     async function refreshBoost() {
         const token = ++pixels.token;
-        const right = pixels.wanted;
+        const leftKey = pixels.wantedLeft;
+        const rightKey = pixels.wantedRight;
         let original = pixels.original;
+        let leftValues = null;
         let rightValues = null;
         try {
             if (!original) original = await _loadValues(item.images.original);
-            if (pixels.painted !== right) rightValues = right === "original" ? original : await _loadValues(item.images[right]);
+            [leftValues, rightValues] = await Promise.all([
+                pixels.paintedLeft === leftKey ? null : (leftKey === "original" ? original : _loadValues(item.images[leftKey])),
+                pixels.paintedRight === rightKey ? null : (rightKey === "original" ? original : _loadValues(item.images[rightKey])),
+            ]);
         } catch (e) {
             console.error(e.name + "\n" + e.message + "\n" + e.stack);
             if (token === pixels.token) setBoost(false);
@@ -504,17 +521,21 @@ function createItem(item, template) {
         if (!pixels.original) {
             pixels.original = original;
             pixels.curve = _boostCurve(original.values, BOOST_BANDS[item.id]);
-            _paintBoosted(original, pixels.curve, boostBefore);
+        }
+        if (leftValues) {
+            _paintBoosted(leftValues, pixels.curve, boostBefore);
+            pixels.paintedLeft = leftKey;
         }
         if (rightValues) {
             _paintBoosted(rightValues, pixels.curve, boostAfter);
-            pixels.painted = right;
+            pixels.paintedRight = rightKey;
         }
         stage.classList.add("boosted");
-        if (right !== state.right) commitRight(right);
+        if (leftKey !== state.left) commitSide("left", leftKey);
+        if (rightKey !== state.right) commitSide("right", rightKey);
     }
 
-    /** @description 대비 강조 켜기/끄기 */
+    /** @description 대비 강조 전환 */
     function setBoost(on) {
         state.boost = on;
         boost.setAttribute("aria-pressed", String(on));
@@ -524,7 +545,8 @@ function createItem(item, template) {
         }
         pixels.token++;
         stage.classList.remove("boosted");
-        if (pixels.wanted !== state.right) showPlain(pixels.wanted);
+        if (pixels.wantedLeft !== state.left) commitSide("left", pixels.wantedLeft);
+        if (pixels.wantedRight !== state.right) commitSide("right", pixels.wantedRight);
     }
 
     /** @description 경계 위치 지정 (0~100) */
@@ -533,7 +555,7 @@ function createItem(item, template) {
         const rounded = Math.round(state.pos);
         stage.style.setProperty("--pos", state.pos + "%");
         divider.setAttribute("aria-valuenow", String(rounded));
-        divider.setAttribute("aria-valuetext", I18n.t("divider.valuetext", { left: rounded, version: _versionLabel(state.right), right: 100 - rounded }));
+        divider.setAttribute("aria-valuetext", I18n.t("divider.valuetext", { left: rounded, leftVersion: _versionLabel(state.left), rightVersion: _versionLabel(state.right), right: 100 - rounded }));
     }
 
     /** @description 포인터 좌표로 경계 이동 */
@@ -684,7 +706,8 @@ function createItem(item, template) {
 
     relabel();
     relabelers.push(relabel);
-    commitRight(DEFAULT_RIGHT);
+    commitSide("left", item.images[DEFAULT_LEFT] ? DEFAULT_LEFT : "original");
+    commitSide("right", item.images[DEFAULT_RIGHT] ? DEFAULT_RIGHT : "strong");
     return { section, wrap, fit };
 }
 
