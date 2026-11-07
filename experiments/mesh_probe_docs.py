@@ -49,8 +49,8 @@ def _grid_starts(length: int, patch: int, stride: int) -> list[int]:
 
 
 def _periodicity_map(image: np.ndarray, patch: int, stride: int,
-                     threshold: float) -> tuple[np.ndarray, list[dict]]:
-    """Heuristic local FFT with two non-collinear spectral-peak requirement."""
+                     threshold: float) -> tuple[np.ndarray, list[dict], np.ndarray]:
+    """Heuristic local FFT: thresholded candidate and unthresholded peak score."""
     gray = cv2.cvtColor(image.astype(np.float32), cv2.COLOR_RGB2GRAY) / 255
     highpass = gray - cv2.GaussianBlur(gray, (0, 0), 8.0)
     height, width = gray.shape
@@ -64,6 +64,7 @@ def _periodicity_map(image: np.ndarray, patch: int, stride: int,
     # Wavelengths from ~3px to ~patch/3 px at this resolution.
     valid = (radius >= 3) & (radius <= patch / 3) & ((fx > 0) | ((fx == 0) & (fy > 0)))
     accumulation = np.zeros((height, width), dtype=np.float32)
+    peak_accumulation = np.zeros_like(accumulation)
     denom = np.zeros_like(accumulation)
     tiles: list[dict] = []
 
@@ -74,7 +75,7 @@ def _periodicity_map(image: np.ndarray, patch: int, stride: int,
             local_mean = cv2.GaussianBlur(spectrum, (0, 0), 2.8)
             prominence = spectrum / (local_mean + max(1e-7, float(np.median(local_mean)) * 0.1))
             peaks = cv2.dilate(prominence, np.ones((5, 5), np.uint8))
-            ys, xs = np.where(valid & (prominence >= threshold) & (prominence >= peaks - 1e-6))
+            ys, xs = np.where(valid & (prominence >= peaks - 1e-6))
             ranked = sorted(zip(ys, xs), key=lambda ij: prominence[ij], reverse=True)
             chosen: list[tuple[float, float]] = []
             for py, px in ranked:
@@ -85,18 +86,21 @@ def _periodicity_map(image: np.ndarray, patch: int, stride: int,
                 if len(chosen) == 2:
                     break
             strength = min(chosen[0][1], chosen[1][1]) if len(chosen) == 2 else 0
-            confidence = float(np.clip((strength - threshold) / 3.5, 0, 1))
+            confidence = float(np.clip((strength - threshold) / 1.25, 0, 1))
             accumulation[y:y + patch, x:x + patch] += confidence * window
+            peak_accumulation[y:y + patch, x:x + patch] += strength * window
             denom[y:y + patch, x:x + patch] += window
             tiles.append({"x": int(x), "y": int(y),
                           "confidence": round(confidence, 4),
                           "dual_peak_prominence": round(float(strength), 3)})
     confidence = np.divide(accumulation, denom, out=np.zeros_like(accumulation), where=denom > 1e-6)
-    return np.clip(confidence, 0, 1), tiles
+    peak_score = np.divide(peak_accumulation, denom,
+                           out=np.zeros_like(peak_accumulation), where=denom > 1e-6)
+    return np.clip(confidence, 0, 1), tiles, peak_score
 
 
 def _heatmap(mask: np.ndarray) -> np.ndarray:
-    heat_bgr = cv2.applyColorMap(np.rint(mask * 255).astype(np.uint8), cv2.COLORMAP_TURBO)
+    heat_bgr = cv2.applyColorMap(np.rint(mask * 255).astype(np.uint8), cv2.COLORMAP_INFERNO)
     return cv2.cvtColor(heat_bgr, cv2.COLOR_BGR2RGB)
 
 
@@ -115,7 +119,8 @@ def main() -> None:
     parser.add_argument("--roi", nargs=4, type=int, metavar=("X", "Y", "W", "H"),
                         help="native image pixel coordinates; default: showcase.json view")
     parser.add_argument("--resampler", choices=("zscale", "opencv"), default="zscale")
-    parser.add_argument("--threshold", type=float, default=3.6)
+    parser.add_argument("--threshold", type=float, default=2.35,
+                        help="Diagnostic peak threshold; lower values raise false positives")
     args = parser.parse_args()
 
     manifest = json.loads((ROOT / "docs" / "showcase.json").read_text(encoding="utf-8"))
@@ -139,6 +144,7 @@ def main() -> None:
     h, w = original.shape[:2]
     opts = MultiscaleOptions(resampler=args.resampler, kernel="spline36")
     maps = {}
+    peak_maps = {}
     stats = {}
     for scale in SCALES:
         sw, sh = max(1, round(w * scale)), max(1, round(h * scale))
@@ -148,21 +154,30 @@ def main() -> None:
         patch = min(128 if scale == 1 else 96, sw, sh)
         patch = patch // 2 * 2
         stride = max(16, patch // 4)
-        confidence, tiles = _periodicity_map(scaled, patch, stride, args.threshold)
+        confidence, tiles, peak_score = _periodicity_map(scaled, patch, stride, args.threshold)
         full = (confidence if scale == 1 else
                 cv2.resize(confidence, (w, h), interpolation=cv2.INTER_LINEAR))
         maps[scale] = np.clip(full, 0, 1)
+        peak_maps[scale] = (peak_score if scale == 1 else
+                            cv2.resize(peak_score, (w, h), interpolation=cv2.INTER_LINEAR))
         key = {1.: "1x", .75: "075x", .5: "05x"}[scale]
         _write_image(outdir / f"mesh_{key}.png", _heatmap(maps[scale]))
+        # Unthresholded peak evidence stays visible even if candidate detection is empty.
+        _write_image(outdir / f"peak_score_{key}.png",
+                     _heatmap(np.clip((peak_maps[scale] - 1.8) / 2.0, 0, 1)))
         stats[key] = {"scale": scale, "patch": patch, "stride": stride,
                       **_summary(maps[scale]),
+                      "peak_score_p50": round(float(np.percentile(peak_maps[scale], 50)), 3),
+                      "peak_score_p95": round(float(np.percentile(peak_maps[scale], 95)), 3),
                       "top_tiles": sorted(tiles, key=lambda v: v["confidence"], reverse=True)[:10]}
 
     # Cross-scale agreement is diagnostic only; a repeated real texture can agree too.
     agreement = np.sqrt(maps[1.0] * maps[0.5])
     _write_image(outdir / "mesh_agreement.png", _heatmap(agreement))
-    overlay = np.clip(.75 * original.astype(np.float32)
-                      + .25 * _heatmap(agreement).astype(np.float32), 0, 255).astype(np.uint8)
+    heat = _heatmap(agreement).astype(np.float32)
+    opacity = (0.6 * agreement)[..., None]
+    overlay = np.clip(original.astype(np.float32) * (1 - opacity) + heat * opacity,
+                      0, 255).astype(np.uint8)
     _write_image(outdir / "mesh_overlay.png", overlay)
 
     diff_bal = np.abs(original.astype(np.float32) - originals["balanced"].astype(np.float32))
@@ -180,9 +195,12 @@ def main() -> None:
              ("Cross-scale agreement", _heatmap(agreement)),
              ("Overlay", overlay),
              ("Removed by Balanced x12",
-              np.repeat(np.clip(diff_bal.mean(axis=2) * 12, 0, 255).astype(np.uint8)[..., None], 3, axis=2))]
+              np.repeat(np.clip(diff_bal.mean(axis=2) * 12, 0, 255).astype(np.uint8)[..., None], 3, axis=2)),
+             ("Raw peak score 1x", _heatmap(np.clip((peak_maps[1.] - 1.8) / 2.0, 0, 1))),
+             ("Raw peak score 0.75x", _heatmap(np.clip((peak_maps[.75] - 1.8) / 2.0, 0, 1))),
+             ("Raw peak score 0.5x", _heatmap(np.clip((peak_maps[.5] - 1.8) / 2.0, 0, 1)))]
     label_height = 27
-    sheet = Image.new("RGB", (w * 3, (h + label_height) * 3), "#ededed")
+    sheet = Image.new("RGB", (w * 3, (h + label_height) * 4), "#ededed")
     draw = ImageDraw.Draw(sheet)
     for idx, (name, im) in enumerate(cells):
         xx, yy = (idx % 3) * w, (idx // 3) * (h + label_height)
@@ -197,7 +215,7 @@ def main() -> None:
         "agreement": _summary(agreement),
         "mean_abs_original_vs_balanced_dn": round(float(diff_bal.mean()), 4),
         "mean_abs_original_vs_strong_dn": round(float(diff_str.mean()), 4),
-        "interpretation": "Maps show candidate local FFT periodicity only. They are not a validated artifact detector; a true texture or resampling artifact may also activate them.",
+        "interpretation": "Heuristic local FFT periodicity only: unthresholded peak_score maps are diagnostic, and thresholded mesh maps have false positives. Real textures and resampling artifacts may trigger the detector.",
         "rights": "Local diagnostic outputs only; upstream docs/media samples exclude reuse permission."
     }
     (outdir / "stats.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
