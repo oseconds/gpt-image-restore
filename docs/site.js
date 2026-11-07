@@ -9,14 +9,16 @@
 /* =================================== 전역 상수/변수 =================================== */
 
 
-const MANIFEST_URL = new URLSearchParams(location.search).has("local") ? "showcase.local.json" : "showcase.json";
+const TEST_MODE = new URLSearchParams(location.search).has("tests");
+const MANIFEST_URL = TEST_MODE ? "showcase.tests.json"
+    : new URLSearchParams(location.search).has("local") ? "showcase.local.json" : "showcase.json";
 const KEY_STEP = 2;
 const KEY_STEP_LARGE = 10;
 const STAGE_MAX_VIEWPORT = 0.78;
 const STAGE_MIN_HEIGHT = 160;
 const TOUCH_SLOP = 6;
 
-const VERSIONS = ["original", "balanced", "strong", "multiscale"];
+const VERSIONS = ["original", "balanced", "strong", "multiscale", "experimental"];
 const DEFAULT_LEFT = "balanced";
 const DEFAULT_RIGHT = "multiscale";
 
@@ -320,7 +322,8 @@ function createItem(item, template) {
     const view = { base: 0, steps: [], scale: 0, x: 0, y: 0, width: 0, height: 0, wheelAt: -Infinity, wheelRest: 0, touched: false };
     const slider = { pointer: null, dragging: false, startX: 0, startY: 0 };
     const gesture = { pointers: new Map(), pinch: null, settleTimer: 0 };
-    const pixels = { wantedLeft: DEFAULT_LEFT, wantedRight: DEFAULT_RIGHT, original: null, curve: null, paintedLeft: null, paintedRight: null, token: 0 };
+    const initialRight = TEST_MODE && item.images.experimental ? "experimental" : DEFAULT_RIGHT;
+    const pixels = { wantedLeft: DEFAULT_LEFT, wantedRight: initialRight, original: null, curve: null, paintedLeft: null, paintedRight: null, token: 0 };
 
     section.id = item.id;
     const link = section.querySelector(".item-link");
@@ -707,7 +710,7 @@ function createItem(item, template) {
     relabel();
     relabelers.push(relabel);
     commitSide("left", item.images[DEFAULT_LEFT] ? DEFAULT_LEFT : "original");
-    commitSide("right", item.images[DEFAULT_RIGHT] ? DEFAULT_RIGHT : "strong");
+    commitSide("right", item.images[initialRight] ? initialRight : (item.images.strong ? "strong" : "original"));
     return { section, wrap, fit };
 }
 
@@ -715,6 +718,13 @@ function createItem(item, template) {
 /** @description 목록 로드 후 항목, 색인 렌더링 */
 async function init() {
     _initLocaleMenu();
+    if (TEST_MODE) {
+        const notice = document.querySelector(".colophon p");
+        if (notice) {
+            notice.removeAttribute("data-i18n");
+            notice.textContent = "Local-only test images. Do not publish without permission.";
+        }
+    }
     let response;
     try {
         response = await fetch(MANIFEST_URL, { cache: "no-cache" });
