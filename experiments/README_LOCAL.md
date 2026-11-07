@@ -228,3 +228,34 @@ Outputs are timestamped in gitignored `docs/local_media/delta-periodic-teapot/`.
 Only stable `latest_*.png` preview copies are replaced. This experiment reads
 the saved 8-bit PNG versions, so very small floating-point changes may differ
 from a full-precision 2x rerun. Upstream demo derivatives must remain local.
+
+## 2px axes only vs full Periodic (2x Delta 0.50)
+
+Reuses the existing local 2x Delta 0.50 PNG and compares:
+Original / Balanced / Delta 0.50 / Delta + periodic X/Y 2px only /
+Delta + full Periodic. No full-size or 2x restoration needs to rerun.
+
+```sh
+git pull --ff-only
+source .venv/bin/activate
+python experiments/compare_periodic_axes.py --sample teapot
+open docs/local_media/periodic-axes-teapot/latest_boost.png
+open docs/local_media/periodic-axes-teapot/latest_floor_boost.png
+open docs/local_media/periodic-axes-teapot/latest_lid_boost.png
+open docs/local_media/periodic-axes-teapot/latest_floor_removed_x16.png
+```
+
+The same web-style Contrast Boost LUT, derived once from the original
+full-resolution image, is applied to every grayscale preview, **never**
+to restoration or metrics. The report compares FFT bins `(31,0)`, `(0,31)`,
+`(16,-16)` and `(16,16)` plus high-pass energy for the same native ROIs.
+Those signals alone cannot prove which texture is real.
+
+The axis-only experiment reuses the existing `periodic._estimate` fit
+and reconstructs only detected native 2px families `(4,0)` and `(0,4)`.
+It relies on private stage helpers and is intentionally isolated in an
+experiment rather than changing upstream `periodic.py`.
+
+Runs are archived by timestamp in `docs/local_media/periodic-axes-<sample>/`.
+Only `latest_*.png` and `latest_report.json` are overwritten; all output
+is local-only because upstream demo media have no reuse license.
