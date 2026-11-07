@@ -63,8 +63,12 @@ let statusMessage = null;
 
 
 /** @description 결과 키의 현재 언어 이름 */
-function _versionLabel(key) {
-    return I18n.t("version." + key);
+function _versionLabel(key, item) {
+    // Locally generated sweeps provide their own labels; do not hardcode all
+    // possible strength combinations into the public site's version list.
+    if (item?.labels?.[key]) return item.labels[key];
+    const translation = "version." + key;
+    return I18n.has(translation) ? I18n.t(translation) : key.replaceAll("_", " ");
 }
 
 
@@ -339,7 +343,8 @@ function createItem(item, template) {
     }
     I18n.translate(section);
 
-    const availableVersions = VERSIONS.filter((key) => item.images[key]);
+    const availableVersions = [...new Set([...VERSIONS, ...Object.keys(item.images)])]
+        .filter((key) => item.images[key]);
     const selectors = ["left", "right"].map((side, index) => {
         const wrapper = document.createElement("label");
         wrapper.className = "compare-label";
@@ -348,7 +353,7 @@ function createItem(item, template) {
         const select = document.createElement("select");
         select.className = "compare-select";
         select.setAttribute("aria-label", name.textContent);
-        for (const key of availableVersions) select.add(new Option(_versionLabel(key), key));
+        for (const key of availableVersions) select.add(new Option(_versionLabel(key, item), key));
         select.addEventListener("change", () => selectSide(side, select.value));
         wrapper.append(name, select);
         section.querySelector(".versions").append(wrapper);
@@ -451,8 +456,8 @@ function createItem(item, template) {
 
     /** @description 두 이미지의 대체 텍스트, 이름표, 슬라이더 접근성 문구 갱신 */
     function labelSides() {
-        const leftVersion = _versionLabel(state.left);
-        const rightVersion = _versionLabel(state.right);
+        const leftVersion = _versionLabel(state.left, item);
+        const rightVersion = _versionLabel(state.right, item);
         const title = _itemTitle(item);
         before.alt = I18n.t("image.alt", { title, version: leftVersion });
         after.alt = I18n.t("image.alt", { title, version: rightVersion });
@@ -466,7 +471,7 @@ function createItem(item, template) {
     function relabel() {
         link.textContent = _itemTitle(item);
         for (const { select } of selectors) {
-            for (const option of select.options) option.textContent = _versionLabel(option.value);
+            for (const option of select.options) option.textContent = _versionLabel(option.value, item);
         }
         if (state.left && state.right) labelSides();
     }
@@ -562,7 +567,7 @@ function createItem(item, template) {
         const rounded = Math.round(state.pos);
         stage.style.setProperty("--pos", state.pos + "%");
         divider.setAttribute("aria-valuenow", String(rounded));
-        divider.setAttribute("aria-valuetext", I18n.t("divider.valuetext", { left: rounded, leftVersion: _versionLabel(state.left), rightVersion: _versionLabel(state.right), right: 100 - rounded }));
+        divider.setAttribute("aria-valuetext", I18n.t("divider.valuetext", { left: rounded, leftVersion: _versionLabel(state.left, item), rightVersion: _versionLabel(state.right, item), right: 100 - rounded }));
     }
 
     /** @description 포인터 좌표로 경계 이동 */
