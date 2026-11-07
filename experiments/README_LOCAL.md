@@ -71,3 +71,22 @@ Outputs and `stats.json` remain gitignored under `docs/local_media/`.
 This is a diagnostic spectral-peak comparison, **not** proof of an artifact;
 hair and legitimate textures can also produce peaks. The resampling here
 uses OpenCV INTER_AREA; it is not a Spline36 comparison.
+
+## Fixed-frequency peak comparison (Original vs Balanced vs Strong)
+
+The general FFT-band maps can respond strongly to hair and fail to isolate
+skin mesh. On the portrait sample, inspect specific 64px FFT bins
+(`16,-16`, `16,16` control, and `31,0` / `0,31` near 2px):
+
+```sh
+python experiments/mesh_peak_probe.py --sample portrait --roi 555 100 330 280
+open docs/local_media/mesh-peaks-portrait/comparison.png
+cat docs/local_media/mesh-peaks-portrait/stats.json
+```
+
+All three source images are cropped at **identical native pixel coordinates**,
+with the same color scale for each spectrum map. The JSON reports both relative
+peak prominence and absolute Fourier amplitude; higher prominence can occur
+even if the absolute signal did not increase (because other detail was removed).
+This is diagnostic, not a restoration algorithm or proof of a specific artifact
+origin. Derived assets are local-only and gitignored.
