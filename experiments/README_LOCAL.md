@@ -52,3 +52,22 @@ This is diagnostic analysis only, not a new restoration algorithm. Confidence
 maps can falsely identify legitimate periodic textures. Outputs remain local
 and excluded from Git commits by `.gitignore`; do not redistribute the
 upstream sample images or their derivatives.
+
+## Frequency-specific mesh diagnostics (no restoration)
+
+The older thresholded mesh candidate maps can mistake directional hair strands
+for a grid. To inspect *which original-pixel wavelengths* show local FFT peaks,
+run this on the checked-out source images:
+
+```sh
+python experiments/mesh_frequency_probe.py --sample portrait --roi 555 100 330 280
+open docs/local_media/frequency-portrait/frequency_bands.png
+```
+
+The figure uses 1.0x, 0.75x, and 0.5x versions and separates candidate
+2-4, 4-8, 8-16, 16-32 **original-pixel** periodicity. Unresolvable
+downsampled bands are marked rather than misinterpreted as no artifacts.
+Outputs and `stats.json` remain gitignored under `docs/local_media/`.
+This is a diagnostic spectral-peak comparison, **not** proof of an artifact;
+hair and legitimate textures can also produce peaks. The resampling here
+uses OpenCV INTER_AREA; it is not a Spline36 comparison.
