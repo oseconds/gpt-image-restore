@@ -9,9 +9,13 @@
 /* =================================== 전역 상수/변수 =================================== */
 
 
-const TEST_MODE = new URLSearchParams(location.search).has("tests");
-const MANIFEST_URL = TEST_MODE ? "showcase.tests.json"
-    : new URLSearchParams(location.search).has("local") ? "showcase.local.json" : "showcase.json";
+const SEARCH_PARAMS = new URLSearchParams(location.search);
+const TEST_MODE = SEARCH_PARAMS.has("tests");
+const CONTRIBUTED_MODE = SEARCH_PARAMS.has("contributed");
+const EXPERIMENT_MODE = TEST_MODE || CONTRIBUTED_MODE;
+const MANIFEST_URL = CONTRIBUTED_MODE ? "showcase.contributed.json"
+    : TEST_MODE ? "showcase.tests.json"
+    : SEARCH_PARAMS.has("local") ? "showcase.local.json" : "showcase.json";
 const KEY_STEP = 2;
 const KEY_STEP_LARGE = 10;
 const STAGE_MAX_VIEWPORT = 0.78;
@@ -322,7 +326,7 @@ function createItem(item, template) {
     const view = { base: 0, steps: [], scale: 0, x: 0, y: 0, width: 0, height: 0, wheelAt: -Infinity, wheelRest: 0, touched: false };
     const slider = { pointer: null, dragging: false, startX: 0, startY: 0 };
     const gesture = { pointers: new Map(), pinch: null, settleTimer: 0 };
-    const initialRight = TEST_MODE && item.images.experimental ? "experimental" : DEFAULT_RIGHT;
+    const initialRight = EXPERIMENT_MODE && item.images.experimental ? "experimental" : DEFAULT_RIGHT;
     const pixels = { wantedLeft: DEFAULT_LEFT, wantedRight: initialRight, original: null, curve: null, paintedLeft: null, paintedRight: null, token: 0 };
 
     section.id = item.id;
@@ -718,11 +722,13 @@ function createItem(item, template) {
 /** @description 목록 로드 후 항목, 색인 렌더링 */
 async function init() {
     _initLocaleMenu();
-    if (TEST_MODE) {
+    if (EXPERIMENT_MODE) {
         const notice = document.querySelector(".colophon p");
         if (notice) {
             notice.removeAttribute("data-i18n");
-            notice.textContent = "Local-only test images. Do not publish without permission.";
+            notice.textContent = CONTRIBUTED_MODE
+                ? "User-contributed demonstration images. See per-item provenance and rights in showcase.contributed.json."
+                : "Local-only test images. Do not publish without permission.";
         }
     }
     let response;
