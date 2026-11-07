@@ -56,6 +56,50 @@ writes strong.png, and updates the manifest/report. It does not change
 Original, Balanced, or Experimental. The web comparison dropdown will then
 offer all four versions. Do not add --reset in this mode.
 
+## Pre-clean -> Strong strength sweep (local experiment)
+
+To test whether pre-cleaning the image BEFORE the Strong preset reduces
+text stroke damage without losing noise suppression, use the **same** input
+previously processed by compare_owned_images.py:
+
+```sh
+git pull --ff-only
+source .venv/bin/activate
+python experiments/sweep_prestrong.py test_inputs/design-poster.png
+```
+
+Open http://localhost:8000/?tests=1 and choose Strong on A, any pre-clean
+variant on B. The existing original/Strong/Balanced/Experimental outputs
+remain unchanged. The tool appends images to the current local test sample
+and adds dropdown options without requiring a new HTML page.
+
+Default sweep: half-roundtrip Lanczos down 0.5x -> Spline36 up 1x with
+blend gains 0.05, 0.10, 0.25; plus 2x Spline36 -> Balanced @2x -> Lanczos
+down to 1x, subtracting the pure roundtrip and applying delta gains 0.25,
+0.50, 1.00. Each delta variant then gets native X/Y 2px periodic correction
+(strength 1.0) before Strong. Strong uses the same upstream preset settings
+as the baseline and is applied to all pre-cleaned images independently.
+
+For a shorter initial run (half 0.10, delta 0.50 and 1.00 only):
+
+```sh
+python experiments/sweep_prestrong.py test_inputs/design-poster.png \
+  --half 0.10 --delta 0.50 1.00
+```
+
+For a delta-only test, omit the half gains with `--half`. To isolate delta
+without the native periodic stage, add `--xy-strength 0`.
+
+The expensive 2x Balanced operation is shared across all gains in one
+invocation (and the half-roundtrip is also shared), but each variant has
+a separate full Strong pass. Timings and axis detection information are
+written to the test sample's existing report.json under prestrong_sweep.
+The program uses floating-point intermediates, saving 8-bit PNG for the
+same web viewer. It does NOT automatically reduce Strong's destructive
+stage strengths. This is a hypothesis test, not a guaranteed improvement.
+These new local outputs are gitignored; only approved examples should
+later be selected for the public PR.
+
 ## Publish a selected set for the PR (explicit opt-in)
 
 Once rights and quality are reviewed, process only the 3-5 new inputs suitable
