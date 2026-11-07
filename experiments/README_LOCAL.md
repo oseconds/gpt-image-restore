@@ -154,3 +154,36 @@ and the **control-subtracted 2x filter delta**, isolating changes from
 restoration instead of from resampling itself. This is a hypothesis test;
 loss of fine hair/skin texture is a likely side effect of 0.5x roundtrip.
 All generated demo derivatives stay local in the ignored directory.
+
+## Simple resampling strength sweep (portrait / teapot)
+
+Compare the original Balanced output with two small add-on strategies:
+
+- 0.5x Lanczos -> 1x Spline36 roundtrip, blend into **original** at
+  0.10 / 0.25 / 0.50, then run Balanced.
+- 2x Spline36 -> run Balanced at 2x -> 1x Lanczos, subtract the
+  pure resampling-only control, and add that correction to original
+  at gains 0.50 / 1.00 / 1.50. These are alternatives, not applied
+  after the normal Balanced result.
+
+```sh
+git pull --ff-only
+source .venv/bin/activate
+python experiments/sweep_resampler_paths.py --sample portrait
+open docs/local_media/resampler-sweep-portrait/latest.png
+python experiments/sweep_resampler_paths.py --sample teapot
+open docs/local_media/resampler-sweep-teapot/latest.png
+```
+
+Use `--roi 555 100 330 280` to override the native-pixel crop.
+The nine image variants and x12 difference maps are assembled into
+`comparison.png`. The JSON includes image-difference statistics and the
+same fixed-frequency FFT control measurements used in the earlier tests.
+Because the 2x option runs the full Balanced pipeline at 2x, it uses
+substantially more CPU and memory than the half-roundtrip variants.
+
+Previous runs are archived in timestamped folders under
+`docs/local_media/resampler-sweep-<sample>/`; only the convenience
+`latest.png` and `latest-report.json` are replaced.
+All generated media must stay local and uncommitted, because upstream
+demo image reuse is prohibited.
