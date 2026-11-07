@@ -164,12 +164,48 @@ def process_one(path: Path, args) -> dict:
     }
 
 
+def add_strong_to_existing(path: Path, args, item: dict) -> dict:
+    """Add a Strong control WITHOUT rerunning Balanced or the costly 2x pass."""
+    slug = _slug(path)
+    target = (PUBLIC_MEDIA if args.publish else PRIVATE_MEDIA) / slug
+    if not (target / "balanced.png").is_file() or not (target / "experimental.png").is_file():
+        raise FileNotFoundError(
+            f"Run the normal A/B test first; expected existing outputs in {target}")
+    loaded = load_image(path)
+    if loaded.size != (item["width"], item["height"]):
+        raise ValueError(f"Source dimensions changed for {path.name}; rerun the normal comparison")
+    print(f"[{path.name}] Adding Strong preset only...", flush=True)
+    started = time.perf_counter()
+    strong, stage_reports, _ = restore_array(loaded, preset="strong", bit_depth=16)
+    elapsed = round(time.perf_counter() - started, 3)
+    save_image(target / "strong.png", strong, loaded.alpha,
+               image_format="png", bit_depth=8, icc_profile=loaded.icc_profile)
+    item = dict(item)
+    item["images"] = dict(item["images"])
+    media_dir = "contributed_media" if args.publish else "test_media"
+    item["images"]["strong"] = f"{media_dir}/{slug}/strong.png"
+    report_path = target / "report.json"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report["strong_elapsed_seconds"] = elapsed
+    report.setdefault("vs_original", {})["strong"] = _change(strong, loaded.rgb)
+    report["strong_stages"] = {
+        name: {"enabled": values.get("enabled", True)}
+        for name, values in stage_reports.items()
+    }
+    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2),
+                           encoding="utf-8")
+    print(f"[{path.name}] Strong added without rerunning existing comparisons.")
+    return item
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("inputs", nargs="+", type=Path,
                         help="Image files or folders; folders use only their direct image children")
     parser.add_argument("--reset", action="store_true",
                         help="Start a fresh showcase instead of retaining earlier entries")
+    parser.add_argument("--add-strong", action="store_true",
+                        help="Add Strong to existing A/B results without rerunning the 2x method")
     parser.add_argument("--publish", action="store_true",
                         help="Opt in to Git-trackable public demo media and contributed showcase")
     parser.add_argument("--source-model",
@@ -187,9 +223,11 @@ def main() -> None:
     args = parser.parse_args()
 
     images = collect_images(args.inputs)
-    if args.publish and (not args.source_model or not args.license):
+    if args.add_strong and args.reset:
+        parser.error("--add-strong cannot be combined with --reset")
+    if args.publish and not args.add_strong and (not args.source_model or not args.license):
         parser.error("--publish requires --source-model and --license; only publish images you are authorized to share")
-    if args.publish and not args.credit:
+    if args.publish and not args.add_strong and not args.credit:
         parser.error("--publish requires --credit for source attribution")
     manifest_path = PUBLIC_MANIFEST if args.publish else PRIVATE_MANIFEST
     stems = [_slug(path) for path in images]
@@ -208,7 +246,13 @@ def main() -> None:
     items_by_id = {item["id"]: item for item in existing}
 
     for path in images:
-        item = process_one(path, args)
+        slug = _slug(path)
+        if args.add_strong:
+            if slug not in items_by_id:
+                raise ValueError(f"{path.name} missing from existing manifest; run normal A/B first")
+            item = add_strong_to_existing(path, args, items_by_id[slug])
+        else:
+            item = process_one(path, args)
         items_by_id[item["id"]] = item
         # Persist successfully completed work even if a later image fails.
         payload = {"items": list(items_by_id.values())}
