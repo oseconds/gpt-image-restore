@@ -26,3 +26,25 @@ OpenCV fallback is not Spline36.
 All local generated images, local manifests, and reports are .gitignored. Run
 `git status --short` before pushing. No automatic GitHub Actions workflows
 are included in this experimental branch.
+
+## Detect mesh candidates directly from the repository samples
+
+This command crops the native `docs/media/portrait/original.webp` pixels using
+the ROI defined in `docs/showcase.json`, and crops `balanced.webp` and
+`strong.webp` at the exact same source coordinates:
+
+```sh
+python experiments/mesh_probe_docs.py --sample portrait --resampler zscale
+```
+
+Override the native-pixel ROI when necessary:
+
+```sh
+python experiments/mesh_probe_docs.py --sample portrait --roi 472 125 510 340 --resampler zscale
+```
+
+Inspect `docs/local_media/mesh-portrait/comparison.png` and `stats.json`.
+This is diagnostic analysis only, not a new restoration algorithm. Confidence
+maps can falsely identify legitimate periodic textures. Outputs remain local
+and excluded from Git commits by `.gitignore`; do not redistribute the
+upstream sample images or their derivatives.
