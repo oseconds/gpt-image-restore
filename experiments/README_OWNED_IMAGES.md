@@ -35,6 +35,27 @@ available from the A/B dropdowns. Inputs and results are excluded from Git.
 The MacPorts FFmpeg build must include the zscale filter. The 2x pass is much
 heavier than Balanced alone. Avoid processing very large inputs at first.
 
+## Optional Strong baseline on already processed images
+
+The original project's README shows a poster example using Strong, not
+Balanced. To make a like-for-like comparison without rerunning the expensive
+2x restoration, add Strong to one existing local example:
+
+```sh
+python experiments/compare_owned_images.py test_inputs/design-poster.png --add-strong
+```
+
+Or append Strong to every sample already in the test manifest:
+
+```sh
+python experiments/compare_owned_images.py test_inputs --add-strong
+```
+
+This only runs restore_array(..., preset="strong") at the native resolution,
+writes strong.png, and updates the manifest/report. It does not change
+Original, Balanced, or Experimental. The web comparison dropdown will then
+offer all four versions. Do not add --reset in this mode.
+
 ## Publish a selected set for the PR (explicit opt-in)
 
 Once rights and quality are reviewed, process only the 3-5 new inputs suitable
