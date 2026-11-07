@@ -23,6 +23,9 @@ import hashlib
 import json
 import re
 import sys
+from shutil import copyfile
+
+from PIL import Image
 import time
 from pathlib import Path
 
@@ -105,9 +108,21 @@ def process_one(path: Path, args) -> dict:
     custom_seconds = round(time.perf_counter()-started, 3)
 
     outputs = {"original": loaded.rgb, "balanced": balanced, "experimental": custom}
+    # Preserve original PNG bytes (and any embedded C2PA credentials) for the
+    # public PR showcase. A re-encoded PNG silently drops its caBX/JUMBF block.
+    # When orientation metadata requires display rotation, re-encode to match
+    # the processed pixels and report that source credentials were not retained.
+    with Image.open(path) as source_metadata:
+        orientation = source_metadata.getexif().get(274, 1)
+    preserve_original = path.suffix.lower() == ".png" and orientation == 1
     for version, pixels in outputs.items():
-        save_image(target / f"{version}.png", pixels, loaded.alpha,
-                   image_format="png", bit_depth=8, icc_profile=loaded.icc_profile)
+        destination = target / f"{version}.png"
+        if version == "original" and preserve_original:
+            if path != destination.resolve():
+                copyfile(path, destination)
+        else:
+            save_image(destination, pixels, loaded.alpha,
+                       image_format="png", bit_depth=8, icc_profile=loaded.icc_profile)
     # Report is local only. Do not expose the source absolute path to the web manifest.
     report = {
         "source_name": path.name, "width": width, "height": height,
@@ -118,6 +133,7 @@ def process_one(path: Path, args) -> dict:
             "publication_permission_confirmed": bool(args.publish),
         },
         "bit_depth": loaded.bit_depth, "view_xywh": view,
+        "original_png_bytes_preserved": preserve_original,
         "balanced_elapsed_seconds": baseline_seconds,
         "experimental_elapsed_seconds": custom_seconds,
         "experimental": details,
