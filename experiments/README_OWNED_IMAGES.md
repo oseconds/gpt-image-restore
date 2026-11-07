@@ -57,6 +57,12 @@ The public mode creates:
 - docs/contributed_media/<sample>/report.json
 
 The source credit/model/license travel with the item in the manifest.
+For PNG inputs without EXIF orientation changes, the script copies the
+original bytes unchanged into original.png, preserving embedded C2PA caBX
+metadata. Balanced and Experimental are newly encoded derivatives and do
+not inherit a valid original C2PA signature. The generic softwareAgent
+version "gpt-image" is NOT proof of a specific GPT Image 2.6 revision;
+record the model selected at generation time separately, if known.
 The code license and example image rights are separate. demo-only authorizes
 hosting/PR display but not unrestricted reuse. CC BY 4.0 or CC0 are alternatives
 only if the contributor can grant those rights.
