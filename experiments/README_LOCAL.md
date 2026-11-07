@@ -187,3 +187,44 @@ Previous runs are archived in timestamped folders under
 `latest.png` and `latest-report.json` are replaced.
 All generated media must stay local and uncommitted, because upstream
 demo image reuse is prohibited.
+
+## Delta 0.50 + Periodic with web-matched Contrast Boost
+
+Use an already-saved resampler sweep; no need to repeat the expensive 2x Balanced run.
+This adds the existing native-resolution `periodic.apply(..., strength=1.0)`
+to `2x_delta_050.png` from the newest sweep. Compares Original, Balanced,
+Delta 0.50, and Delta 0.50 + Periodic.
+
+```sh
+git pull --ff-only
+source .venv/bin/activate
+python experiments/compare_delta_periodic.py --sample teapot
+open docs/local_media/delta-periodic-teapot/latest_boost.png
+open docs/local_media/delta-periodic-teapot/latest_floor_boost.png
+open docs/local_media/delta-periodic-teapot/latest_lid_boost.png
+open docs/local_media/delta-periodic-teapot/latest_difference_x12.png
+```
+
+The boost mode matches the viewer's `docs/site.js` algorithm: it builds a
+V=max(R,G,B) grayscale tone curve using the ORIGINAL full-resolution image
+histogram (0.2% tails, 0.3..4 slope bounds), then applies the same curve
+to all variants. Contrast is **visualization only**, never part of restoration.
+
+Native-pixel detail crops are generated separately for lid, handle, spout
+connection, and floor, with corresponding contrast-boosted and x12 difference
+panels. A JSON report includes `periodic_stage.status`, accepted components,
+removed RMS, and per-region high-pass energy; high-pass energy is NOT a
+ground-truth quality measure. If `periodic_stage.status` reports no significant
+components, the extra pass has done nothing; do not infer improvement.
+
+To use a particular previous sweep instead of the newest run:
+
+```sh
+python experiments/compare_delta_periodic.py --sample teapot --sweep-folder \
+  docs/local_media/resampler-sweep-teapot/YOUR_RUN_DIRECTORY
+```
+
+Outputs are timestamped in gitignored `docs/local_media/delta-periodic-teapot/`.
+Only stable `latest_*.png` preview copies are replaced. This experiment reads
+the saved 8-bit PNG versions, so very small floating-point changes may differ
+from a full-precision 2x rerun. Upstream demo derivatives must remain local.
