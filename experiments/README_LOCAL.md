@@ -90,3 +90,37 @@ peak prominence and absolute Fourier amplitude; higher prominence can occur
 even if the absolute signal did not increase (because other detail was removed).
 This is diagnostic, not a restoration algorithm or proof of a specific artifact
 origin. Derived assets are local-only and gitignored.
+
+## Compare Spline36 multiscale ordering (Pre vs Post)
+
+This tests whether the **same** multiscale grime/mottle correction differs
+when added before or after existing Balanced, without modifying the preset.
+
+From the repository root on macOS, with FFmpeg `zscale` installed:
+
+```sh
+git pull --ff-only
+source .venv/bin/activate
+python experiments/compare_multiscale_order.py
+open docs/local_media/order-portrait/comparison.png
+open docs/local_media/order-teapot/comparison.png
+```
+
+Defaults: `--scales 0.75 0.5 --strengths 0.6 0.4 --resampler zscale`
+(Spline36). To inspect a different native-pixel crop:
+
+```sh
+python experiments/compare_multiscale_order.py --sample portrait --roi 555 100 330 280
+```
+
+Each sample produces full-resolution `original.png`, `balanced.png`,
+`pre.png`, `post.png`, a two-row `comparison.png` with native crops and
+12x absolute differences, and `report.json` with pixel-change metrics.
+**Pre**: Original > Multiscale > Balanced.
+**Post**: Original > Balanced > Multiscale.
+Both multiscale passes reuse the same `repo_scale_denoiser`, which runs on
+reduced frames; they upsample *correction residuals*, not denoised frames.
+Inspect visual quality: pixel difference is not a quality metric.
+
+All assets stay in gitignored `docs/local_media/`. Upstream sample media
+are not licensed for redistribution: do not publish their derivatives.
