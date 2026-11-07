@@ -100,6 +100,54 @@ stage strengths. This is a hypothesis test, not a guaranteed improvement.
 These new local outputs are gitignored; only approved examples should
 later be selected for the public PR.
 
+## Post-Strong / post-Balanced: recover original glyph strokes (no rerun)
+
+Instead of trying to change what Strong detects before processing, this
+experiment works **after** the Strong or Balanced result already exists.
+It computes a soft protection mask from the Original using the repository's
+existing text-row detector plus high-contrast source strokes, then blends
+back only masked differences from one donor. The Strong background remains
+otherwise untouched. This tests whether aggressive cleanup and fine text
+preservation can be separated without editing the Strong stage code.
+
+```sh
+git pull --ff-only
+source .venv/bin/activate
+python experiments/sweep_postrestore.py test_inputs/design-poster.png
+```
+
+The default donor sources are Original, Balanced and Experimental;
+each is tested at strengths 0.50, 0.80 and 1.00, producing nine variants
+alongside the existing Strong baseline in the same web comparison:
+
+  http://localhost:8000/?tests=1
+
+To test Balanced as the base instead of Strong, or limit donors/strengths:
+
+```sh
+python experiments/sweep_postrestore.py test_inputs/design-poster.png \
+  --target balanced --donors original --strengths 0.5 0.8 1
+```
+
+If tiny timetable text is missing from automated text detection, supply
+an extra high-contrast source-stroke support region in native pixels:
+
+```sh
+python experiments/sweep_postrestore.py test_inputs/design-poster.png \
+  --target strong --donors original balanced --roi 455 580 560 640
+```
+
+The optional --roi adds protection support rather than cropping processing;
+the per-pixel source-detail mask still gates it. Inspect the local
+docs/test_media/design-poster/post_mask.png for false positives, especially
+the poster's dotted procedural mesh. The algorithm is **not** automatic
+content reconstruction: it literally reintroduces original/baseline pixels,
+including any original noise at falsely protected positions. Never infer
+improvement from a single poster or from lower pixel difference alone.
+
+No Strong, Balanced or Experimental reconstruction is rerun or overwritten,
+and all new outputs stay gitignored. The small comparisons are exploratory
+and separate from the eventual clean PR implementation.
 ## Publish a selected set for the PR (explicit opt-in)
 
 Once rights and quality are reviewed, process only the 3-5 new inputs suitable
