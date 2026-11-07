@@ -164,6 +164,20 @@ def _sheet(images: dict[str, np.ndarray], outfile: Path, *,
     sheet.save(outfile)
 
 
+def _diff_panel(images: dict[str, np.ndarray], outfile: Path, *,
+                roi: tuple[int, int, int, int] | None = None) -> None:
+    original, balanced, delta, combo = images.values()
+    comparisons = {
+        "Original - Balanced (abs x12)": np.abs(original - balanced),
+        "Original - Delta 0.50 (abs x12)": np.abs(original - delta),
+        "Delta 0.50 - Combo (abs x12)": np.abs(delta - combo),
+        "Balanced - Combo (abs x12)": np.abs(balanced - combo),
+    }
+    amplified = {name: np.clip(v * 12, 0, 255)
+                 for name, v in comparisons.items()}
+    _sheet(amplified, outfile, roi=roi)
+
+
 def _rms_highpass(rgb: np.ndarray, sigma: float = 1.15) -> float:
     gray = cv2.cvtColor(np.asarray(rgb, np.float32), cv2.COLOR_RGB2GRAY)
     detail = gray - cv2.GaussianBlur(gray, (0, 0), sigma)
@@ -225,9 +239,11 @@ def main() -> None:
     # All filenames follow the same fixed position/order; no overwritten runs.
     _sheet(variants, outdir / "normal.png", max_width=768)
     _sheet(variants, outdir / "boost.png", lut=lut, max_width=768)
+    _diff_panel(variants, outdir / "difference_x12.png")
     for label, region in (TEAPOT_ROIS if args.sample=="teapot" else PORTRAIT_ROIS).items():
         _sheet(variants, outdir / f"{label}_normal.png", roi=region)
         _sheet(variants, outdir / f"{label}_boost.png", roi=region, lut=lut)
+        _diff_panel(variants, outdir / f"{label}_difference_x12.png", roi=region)
     if args.roi is not None:
         roi = tuple(args.roi)
         _sheet(variants, outdir / "custom_normal.png", roi=roi)
@@ -272,8 +288,10 @@ def main() -> None:
     }
     (outdir / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2,
                                                    default=_json_default), encoding="utf-8")
-    for key in ("normal","boost","floor_boost","lid_boost","handle_boost",
-                "forehead_boost"):
+    for key in ("normal","boost","difference_x12",
+                "floor_boost","floor_difference_x12","lid_boost",
+                "lid_difference_x12","handle_boost","handle_difference_x12",
+                "forehead_boost","forehead_difference_x12"):
         source = outdir / f"{key}.png"
         if source.is_file():
             copyfile(source, parent / f"latest_{key}.png")
