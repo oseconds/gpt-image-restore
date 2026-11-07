@@ -1,16 +1,19 @@
-"""Create a private A/B web showcase from one or more user-owned images.
+"""Generate A/B comparisons using new, user-owned images only.
 
-No images from the upstream docs/media directory are used. All generated
-pictures and the test manifest stay ignored by Git.
-
-Example:
+Local by default (gitignored):
   python experiments/compare_owned_images.py ~/Pictures/gpt-tests
-  python experiments/compare_owned_images.py a.png b.webp c.jpg --reset
   python3 -m http.server 8000 --directory docs
   # http://localhost:8000/?tests=1
 
-The right side uses the experimental 2x Delta 0.50 + X/Y 2px correction.
-This is an alternative to Balanced, not a second pass on Balanced.
+Explicit opt-in for new images approved for public sharing:
+  python experiments/compare_owned_images.py ~/Pictures/gpt-tests --publish \
+      --source-model "GPT Image" --license "demo-only" --credit "0seconds"
+  # http://localhost:8000/?contributed=1
+
+Published images and manifest are tracked by Git. Do not use sources from
+upstream docs/media: those examples have separate restrictive rights.
+
+Right side is 2x Delta 0.50 + X/Y 2px correction, an alternative to Balanced.
 """
 from __future__ import annotations
 
@@ -35,8 +38,11 @@ from gptimg_restore.pipeline import restore_array
 
 EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
 PRIVATE_MEDIA = ROOT / "docs" / "test_media"
-MANIFEST = ROOT / "docs" / "showcase.tests.json"
+PUBLIC_MEDIA = ROOT / "docs" / "contributed_media"
+PRIVATE_MANIFEST = ROOT / "docs" / "showcase.tests.json"
+PUBLIC_MANIFEST = ROOT / "docs" / "showcase.contributed.json"
 FORBIDDEN_MEDIA = (ROOT / "docs" / "media").resolve()
+FORBIDDEN_PREVIEW = (ROOT / "docs" / "previews").resolve()
 
 
 def collect_images(inputs: list[Path]) -> list[Path]:
@@ -55,8 +61,8 @@ def collect_images(inputs: list[Path]) -> list[Path]:
     # No implicit processing of upstream sample media, whose reuse is forbidden.
     unique = list(dict.fromkeys(p.resolve() for p in found))
     for path in unique:
-        if path.is_relative_to(FORBIDDEN_MEDIA):
-            raise ValueError(f"Refusing to use upstream docs/media sample: {path}")
+        if path.is_relative_to(FORBIDDEN_MEDIA) or path.is_relative_to(FORBIDDEN_PREVIEW):
+            raise ValueError(f"Refusing to use upstream demo sample: {path}")
     if not unique:
         raise ValueError(f"No input images found (supported: {sorted(EXTENSIONS)})")
     return unique
@@ -77,7 +83,7 @@ def _change(a: np.ndarray, b: np.ndarray) -> dict:
 
 def process_one(path: Path, args) -> dict:
     slug = _slug(path)
-    target = PRIVATE_MEDIA / slug
+    target = (PUBLIC_MEDIA if args.publish else PRIVATE_MEDIA) / slug
     target.mkdir(parents=True, exist_ok=True)
     loaded = load_image(path)
     width, height = loaded.size
@@ -105,6 +111,12 @@ def process_one(path: Path, args) -> dict:
     # Report is local only. Do not expose the source absolute path to the web manifest.
     report = {
         "source_name": path.name, "width": width, "height": height,
+        "provenance": {
+            "provided_by": args.credit if args.publish else "local user",
+            "generator": args.source_model or "unspecified",
+            "license": args.license if args.publish else "local-only",
+            "publication_permission_confirmed": bool(args.publish),
+        },
         "bit_depth": loaded.bit_depth, "view_xywh": view,
         "balanced_elapsed_seconds": baseline_seconds,
         "experimental_elapsed_seconds": custom_seconds,
@@ -119,14 +131,16 @@ def process_one(path: Path, args) -> dict:
         json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"[{path.name}] outputs: {target}", flush=True)
     # The existing viewer reads this exact object structure.
+    media_dir = "contributed_media" if args.publish else "test_media"
     return {
         "id": slug,
         "title": args.name or path.stem,
         "width": width,
         "height": height,
-        "images": {key: f"test_media/{slug}/{key}.png" for key in outputs},
-        "preview": f"test_media/{slug}/original.png",
+        "images": {key: f"{media_dir}/{slug}/{key}.png" for key in outputs},
+        "preview": f"{media_dir}/{slug}/original.png",
         "view": view,
+        "provenance": report["provenance"],
     }
 
 
@@ -135,7 +149,14 @@ def main() -> None:
     parser.add_argument("inputs", nargs="+", type=Path,
                         help="Image files or folders; folders use only their direct image children")
     parser.add_argument("--reset", action="store_true",
-                        help="Start a fresh test showcase instead of retaining earlier entries")
+                        help="Start a fresh showcase instead of retaining earlier entries")
+    parser.add_argument("--publish", action="store_true",
+                        help="Opt in to Git-trackable public demo media and contributed showcase")
+    parser.add_argument("--source-model",
+                        help="Image generator/model used (required when --publish)")
+    parser.add_argument("--credit", help="Public source credit/attribution")
+    parser.add_argument("--license", choices=("demo-only", "CC-BY-4.0", "CC0-1.0"),
+                        help="Rights for NEW images (required when --publish)")
     parser.add_argument("--name", help="Display name, for one input image only")
     parser.add_argument("--roi", nargs=4, type=int, metavar=("X","Y","W","H"),
                         help="Native-pixel initial zoom region, for one input image only")
@@ -146,6 +167,11 @@ def main() -> None:
     args = parser.parse_args()
 
     images = collect_images(args.inputs)
+    if args.publish and (not args.source_model or not args.license):
+        parser.error("--publish requires --source-model and --license; only publish images you are authorized to share")
+    if args.publish and not args.credit:
+        parser.error("--publish requires --credit for source attribution")
+    manifest_path = PUBLIC_MANIFEST if args.publish else PRIVATE_MANIFEST
     if (args.name or args.roi is not None) and len(images) != 1:
         parser.error("--name and --roi require one input image")
     if not 0 <= args.delta_gain <= 2:
@@ -154,8 +180,8 @@ def main() -> None:
         parser.error("--periodic-strength must be within [0,2]")
 
     existing = []
-    if not args.reset and MANIFEST.is_file():
-        existing = json.loads(MANIFEST.read_text(encoding="utf-8")).get("items", [])
+    if not args.reset and manifest_path.is_file():
+        existing = json.loads(manifest_path.read_text(encoding="utf-8")).get("items", [])
     items_by_id = {item["id"]: item for item in existing}
 
     for path in images:
@@ -163,15 +189,19 @@ def main() -> None:
         items_by_id[item["id"]] = item
         # Persist successfully completed work even if a later image fails.
         payload = {"items": list(items_by_id.values())}
-        temp = MANIFEST.with_suffix(".json.tmp")
+        temp = manifest_path.with_suffix(".json.tmp")
         temp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        temp.replace(MANIFEST)
+        temp.replace(manifest_path)
         gc.collect()
 
-    print(f"\n{len(images)} image(s) processed. Test manifest: {MANIFEST}")
+    print(f"\n{len(images)} image(s) processed. Manifest: {manifest_path}")
     print("Run: python3 -m http.server 8000 --directory docs")
-    print("Open: http://localhost:8000/?tests=1")
-    print("Generated images and manifest are gitignored and must not be committed.")
+    if args.publish:
+        print("Open: http://localhost:8000/?contributed=1")
+        print("Public media are Git-trackable. Review images, rights, metadata and file sizes before commit.")
+    else:
+        print("Open: http://localhost:8000/?tests=1")
+        print("Local test media and manifest are gitignored.")
 
 
 if __name__ == "__main__":
