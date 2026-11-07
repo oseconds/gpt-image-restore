@@ -21,3 +21,8 @@ docs/local_media/
 docs/media/*/multiscale.webp
 experiments/media_reports/
 multiscale_results/
+
+# User-owned private test comparisons. Use --publish to opt into a separate
+# tracked contributed_media/ directory and showcase.contributed.json.
+docs/showcase.tests.json
+docs/test_media/
