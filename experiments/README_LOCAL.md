@@ -44,6 +44,10 @@ python experiments/mesh_probe_docs.py --sample portrait --roi 472 125 510 340 --
 ```
 
 Inspect `docs/local_media/mesh-portrait/comparison.png` and `stats.json`.
+The comparison includes thresholded mesh candidates and **raw peak score** maps;
+`peak_score_1x.png` stays informative even if the thresholded candidate mask is black.
+Use `--threshold 2.35` (default) or test a stricter value; a brighter score
+is *not* proof that the pattern is an artifact.
 This is diagnostic analysis only, not a new restoration algorithm. Confidence
 maps can falsely identify legitimate periodic textures. Outputs remain local
 and excluded from Git commits by `.gitignore`; do not redistribute the
