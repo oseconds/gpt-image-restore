@@ -26,3 +26,5 @@ multiscale_results/
 # tracked contributed_media/ directory and showcase.contributed.json.
 docs/showcase.tests.json
 docs/test_media/
+*.DS_Store
+
