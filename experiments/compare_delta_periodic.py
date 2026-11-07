@@ -268,7 +268,7 @@ def main() -> None:
         }
 
     report = {
-        "source_sweep": str(sweep.relative_to(ROOT)),
+        "source_sweep": str(sweep.relative_to(ROOT)) if sweep.is_relative_to(ROOT) else str(sweep),
         "source_precision": "8-bit PNG output of prior 2x sweep; no 2x rerun",
         "comparison": list(variants.keys()),
         "periodic_stage": stage_report,
